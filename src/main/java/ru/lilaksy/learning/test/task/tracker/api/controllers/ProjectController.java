@@ -3,6 +3,7 @@ package ru.lilaksy.learning.test.task.tracker.api.controllers;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+import ru.lilaksy.learning.test.task.tracker.api.controllers.helpers.HelperController;
 import ru.lilaksy.learning.test.task.tracker.api.dto.ProjectDto;
 import ru.lilaksy.learning.test.task.tracker.api.exceptions.BadRequestException;
 import ru.lilaksy.learning.test.task.tracker.api.exceptions.NotFoundException;
@@ -25,6 +26,7 @@ public class ProjectController {
 
     private final ProjectRepository projectRepository;
 
+    private final HelperController helperController;
 
     public static final String CREATE_PROJECT = "/api/projects";
     public static final String EDIT_PROJECT = "/api/projects/{project_id}";
@@ -46,21 +48,21 @@ public class ProjectController {
     }
 
     @PostMapping(CREATE_PROJECT)
-    public ProjectDto createProject(@RequestParam String name) {
+    public ProjectDto createProject(@RequestParam String project_name) {
 
-        if (name.trim().isEmpty()) {
+        if (project_name.trim().isEmpty()) {
             throw new BadRequestException("Name can not be empty!");
         }
 
         projectRepository
-                .findByName(name)
+                .findByName(project_name)
                 .ifPresent(project -> {
-                    throw new BadRequestException(String.format("Project \"%s\" is already exists.", name));
+                    throw new BadRequestException(String.format("Project \"%s\" is already exists.", project_name));
                 });
 
         ProjectEntity project = projectRepository.saveAndFlush(
                 ProjectEntity.builder()
-                        .name(name)
+                        .name(project_name)
                         .build()
         );
 
@@ -74,7 +76,7 @@ public class ProjectController {
             throw new BadRequestException("Name can not be empty!");
         }
 
-        ProjectEntity project = getProjectByIdOrThrowException(projectId);
+        ProjectEntity project = helperController.getProjectByIdOrThrowException(projectId);
 
         projectRepository
                 .findByName(name)
@@ -93,20 +95,11 @@ public class ProjectController {
     @DeleteMapping(DELETE_PROJECT)
     public Boolean deleteProject(@PathVariable("project_id") Long projectId) {
 
-        getProjectByIdOrThrowException(projectId);
+        helperController.getProjectByIdOrThrowException(projectId);
 
         projectRepository.deleteById(projectId);
 
         return true;
     }
 
-    private ProjectEntity getProjectByIdOrThrowException(Long projectId) {
-        return projectRepository
-                .findById(projectId)
-                .orElseThrow(
-                        () -> new NotFoundException(
-                                String.format("Project with id \"%s\" does not exists.", projectId)
-                        )
-                );
-    }
 }
