@@ -70,22 +70,22 @@ public class ProjectController {
     }
 
     @PatchMapping(EDIT_PROJECT)
-    public ProjectDto editProject(@RequestParam String name, @PathVariable("project_id") Long projectId) {
+    public ProjectDto editProject(@RequestParam String project_name, @PathVariable("project_id") Long projectId) {
 
-        if (name.trim().isEmpty()) {
+        if (project_name.trim().isEmpty()) {
             throw new BadRequestException("Name can not be empty!");
         }
 
         ProjectEntity project = helperController.getProjectByIdOrThrowException(projectId);
 
         projectRepository
-                .findByName(name)
+                .findByName(project_name)
                 .filter(anotherProject -> !Objects.equals(anotherProject.getId(), projectId))
                 .ifPresent(anotherProject -> {
-                    throw new BadRequestException(String.format("Project \"%s\" is already exists.", name));
+                    throw new BadRequestException(String.format("Project \"%s\" is already exists.", project_name));
                 });
 
-        project.setName(name);
+        project.setName(project_name);
 
         project = projectRepository.saveAndFlush(project);
 

@@ -48,7 +48,7 @@ public class TaskStateController {
     }
 
     @PostMapping(CREATE_TASK_STATE)
-    public TaskStateDto createProject(
+    public TaskStateDto createTaskState(
             @PathVariable(name = "project_id") Long projectId,
             @RequestParam(name = "task_state_name") String taskStateName
     ) {
@@ -68,13 +68,75 @@ public class TaskStateController {
                     throw new BadRequestException(String.format("Task state \"%s\" already exists!", taskStateName));
                 });
 
+        Optional<TaskStateEntity> optionalAnotherTaskState = taskStateRepository.findTaskStateEntityByRightTaskStateIdIsNullAndProjectId(projectId);
+
         TaskStateEntity taskState = taskStateRepository.saveAndFlush(
                 TaskStateEntity.builder()
                         .name(taskStateName)
+                        .project(project)
                         .build()
         );
-        //TODO: Create logic to make current task state added at the last position
 
-        return taskStateDtoFactory.makeTaskStateDto(taskState);
+        optionalAnotherTaskState
+                .ifPresent(anotherTaskState -> {
+                    taskState.setLeftTaskState(anotherTaskState);
+                    anotherTaskState.setRightTaskState(taskState);
+                    taskStateRepository.saveAndFlush(anotherTaskState);
+                });
+
+        final TaskStateEntity savedTaskState = taskStateRepository.saveAndFlush(taskState);
+
+        return taskStateDtoFactory.makeTaskStateDto(savedTaskState);
+    }
+
+    @PatchMapping(EDIT_TASK_STATE)
+    public TaskStateDto editTaskState(
+            @PathVariable(name = "project_id") Long projectId,
+            @PathVariable(name = "task_state_id") Long taskStateId,
+            @RequestParam(name = "task_state_name") String taskStateName
+    ){
+
+        if (taskStateName.trim().isEmpty()) {
+            throw new BadRequestException("Name can not be empty!");
+        }
+
+        ProjectEntity project = helperController.getProjectByIdOrThrowException(projectId);
+
+        TaskStateEntity taskState = helperController.getTaskStateByIdOrThrowException(taskStateId);
+
+        project.getTaskStates()
+                .stream()
+                .map(TaskStateEntity::getName)
+                .filter(anotherTaskStateName -> anotherTaskStateName.equalsIgnoreCase(taskStateName))
+                .findAny()
+                .ifPresent(e -> {
+                    throw new BadRequestException(String.format("Task state \"%s\" already exists!", taskStateName));
+                });
+
+        taskState.setName(taskStateName);
+
+        /*
+        * //TODO: create logic to drag task state so another task states dragged automaticly,
+        *    example: 1(2 on a right side), 2(1 on a left side and 3 on a right side),
+        *    3(2 on a left side and 4 on a right side), 4(3 on a left side) ->
+        *    1(3 on a right side), 3(1 on a left side and 2 on a right side),
+        *    2(3 on a left side and 4 on a right side), 4(2 on a left side)
+        * */
+
+        return null;
+    }
+
+    @DeleteMapping(DELETE_TASK_STATE)
+    public Boolean deleteTaskState(
+            @PathVariable(name = "project_id") Long projectId,
+            @PathVariable(name = "task_state_id") Long taskStateId
+    ){
+        helperController.getProjectByIdOrThrowException(projectId);
+
+        helperController.getTaskStateByIdOrThrowException(taskStateId);
+
+        taskStateRepository.deleteById(taskStateId);
+
+        return true;
     }
 }
