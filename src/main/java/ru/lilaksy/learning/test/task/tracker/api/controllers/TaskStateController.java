@@ -4,20 +4,16 @@ import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import ru.lilaksy.learning.test.task.tracker.api.controllers.helpers.HelperController;
-import ru.lilaksy.learning.test.task.tracker.api.dto.ProjectDto;
 import ru.lilaksy.learning.test.task.tracker.api.dto.TaskStateDto;
 import ru.lilaksy.learning.test.task.tracker.api.exceptions.BadRequestException;
-import ru.lilaksy.learning.test.task.tracker.api.exceptions.NotFoundException;
 import ru.lilaksy.learning.test.task.tracker.api.factories.TaskStateDtoFactory;
 import ru.lilaksy.learning.test.task.tracker.store.entities.ProjectEntity;
 import ru.lilaksy.learning.test.task.tracker.store.entities.TaskStateEntity;
 import ru.lilaksy.learning.test.task.tracker.store.repositories.TaskStateRepository;
 
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 @RequiredArgsConstructor
 @RestController
@@ -31,9 +27,10 @@ public class TaskStateController {
     private final HelperController helperController;
 
     public static final String CREATE_TASK_STATE = "/api/projects/{project_id}/task-states";
-    public static final String EDIT_TASK_STATE = "/api/projects/{project_id}/task-states/{task_state_id}";
+    public static final String EDIT_TASK_STATE = "/api/task-states/{task_state_id}";
+    public static final String MOVE_TASK_STATE = "/api/task-states/{task_state_id}/move";
     public static final String GET_TASK_STATES = "/api/projects/{project_id}/task-states";
-    public static final String DELETE_TASK_STATE = "/api/projects/{project_id}/task-states/{task_state_id}";
+    public static final String DELETE_TASK_STATE = "/api/task-states/{task_state_id}";
 
     @GetMapping(GET_TASK_STATES)
     public List<TaskStateDto> getTaskStates(@PathVariable(name = "project_id") Long projectId) {
@@ -91,7 +88,6 @@ public class TaskStateController {
 
     @PatchMapping(EDIT_TASK_STATE)
     public TaskStateDto editTaskState(
-            @PathVariable(name = "project_id") Long projectId,
             @PathVariable(name = "task_state_id") Long taskStateId,
             @RequestParam(name = "task_state_name") String taskStateName
     ){
@@ -100,38 +96,103 @@ public class TaskStateController {
             throw new BadRequestException("Name can not be empty!");
         }
 
-        ProjectEntity project = helperController.getProjectByIdOrThrowException(projectId);
-
         TaskStateEntity taskState = helperController.getTaskStateByIdOrThrowException(taskStateId);
 
-        project.getTaskStates()
-                .stream()
-                .map(TaskStateEntity::getName)
-                .filter(anotherTaskStateName -> anotherTaskStateName.equalsIgnoreCase(taskStateName))
-                .findAny()
+        taskStateRepository
+                .findTaskStateEntityByProjectIdAndNameContainsIgnoreCase(taskState.getProject().getId(), taskStateName)
+                .filter(anotherTaskState -> !anotherTaskState.getId().equals(taskStateId))
                 .ifPresent(e -> {
                     throw new BadRequestException(String.format("Task state \"%s\" already exists!", taskStateName));
                 });
 
         taskState.setName(taskStateName);
 
-        /*
-        * //TODO: create logic to drag task state so another task states dragged automaticly,
-        *    example: 1(2 on a right side), 2(1 on a left side and 3 on a right side),
-        *    3(2 on a left side and 4 on a right side), 4(3 on a left side) ->
-        *    1(3 on a right side), 3(1 on a left side and 2 on a right side),
-        *    2(3 on a left side and 4 on a right side), 4(2 on a left side)
-        * */
+        taskState = taskStateRepository.saveAndFlush(taskState);
 
-        return null;
+        return taskStateDtoFactory.makeTaskStateDto(taskState);
+    }
+
+    @PatchMapping(MOVE_TASK_STATE)
+    public TaskStateDto moveTaskState(
+            @PathVariable(name = "task_state_id") Long taskStateId,
+            @RequestParam(name = "new_left_task_state_id", required = false) Optional<Long> optionalLeftTaskStateId
+    ){
+        TaskStateEntity wannaBeChangedTaskState = helperController.getTaskStateByIdOrThrowException(taskStateId);
+
+        ProjectEntity project = wannaBeChangedTaskState.getProject();
+
+        if (project.getTaskStates().size() <= 1) {
+            throw new BadRequestException("Can not change position in project with less than 2 task states.");
+
+            //or if we don't want to show exception for client, we can use:
+            //return taskStateDtoFactory.makeTaskStateDto(wannaBeChangedTaskState);
+        }
+
+        Optional<TaskStateEntity> currentRightTaskState = wannaBeChangedTaskState.getRightTaskState();
+
+        Optional<TaskStateEntity> currentLeftTaskState = wannaBeChangedTaskState.getLeftTaskState();
+
+        Optional<TaskStateEntity> leftTaskState = optionalLeftTaskStateId
+                .map(leftTaskStateId -> {
+                    if (taskStateId.equals(leftTaskStateId)){
+                        throw new BadRequestException("Left task state ID is equals to changing task state.");
+                    }
+
+                    TaskStateEntity leftTaskStateEntity = helperController.getTaskStateByIdOrThrowException(leftTaskStateId);
+
+                    if (!project.getId().equals(leftTaskStateEntity.getProject().getId())){
+                        throw new BadRequestException("Task state position can not be changed within the same project!");
+                    }
+
+                    return leftTaskStateEntity;
+                });
+
+        Optional<TaskStateEntity> rightFromLeftTaskState;
+
+        if (leftTaskState.isEmpty()){
+            rightFromLeftTaskState = project.getTaskStates()
+                    .stream()
+                    .filter(e -> e.getLeftTaskState().isEmpty())
+                    .findAny();
+        }
+        else{
+            rightFromLeftTaskState = leftTaskState.get().getRightTaskState();
+        }
+
+        currentLeftTaskState.ifPresent(it -> {
+            it.setRightTaskState(currentRightTaskState.orElse(null));
+            taskStateRepository.saveAndFlush(it);
+        });
+        currentRightTaskState.ifPresent(it -> {
+            it.setLeftTaskState(currentLeftTaskState.orElse(null));
+            taskStateRepository.saveAndFlush(it);
+        });
+
+        if(rightFromLeftTaskState.isPresent()){
+            rightFromLeftTaskState.get().setLeftTaskState(wannaBeChangedTaskState);
+            wannaBeChangedTaskState.setRightTaskState(rightFromLeftTaskState.get());
+        }
+        else{
+            wannaBeChangedTaskState.setRightTaskState(null);
+        }
+
+        if(leftTaskState.isPresent()){
+            leftTaskState.get().setRightTaskState(wannaBeChangedTaskState);
+            wannaBeChangedTaskState.setLeftTaskState(leftTaskState.get());
+        }
+        else{
+            wannaBeChangedTaskState.setLeftTaskState(null);
+        }
+
+        wannaBeChangedTaskState = taskStateRepository.saveAndFlush(wannaBeChangedTaskState);
+        leftTaskState.ifPresent(taskStateRepository::saveAndFlush);
+        rightFromLeftTaskState.ifPresent(taskStateRepository::saveAndFlush);
+
+        return taskStateDtoFactory.makeTaskStateDto(wannaBeChangedTaskState);
     }
 
     @DeleteMapping(DELETE_TASK_STATE)
-    public Boolean deleteTaskState(
-            @PathVariable(name = "project_id") Long projectId,
-            @PathVariable(name = "task_state_id") Long taskStateId
-    ){
-        helperController.getProjectByIdOrThrowException(projectId);
+    public Boolean deleteTaskState(@PathVariable(name = "task_state_id") Long taskStateId){
 
         helperController.getTaskStateByIdOrThrowException(taskStateId);
 
