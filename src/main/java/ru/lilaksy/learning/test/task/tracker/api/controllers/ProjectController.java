@@ -6,7 +6,6 @@ import org.springframework.web.bind.annotation.*;
 import ru.lilaksy.learning.test.task.tracker.api.controllers.helpers.HelperController;
 import ru.lilaksy.learning.test.task.tracker.api.dto.ProjectDto;
 import ru.lilaksy.learning.test.task.tracker.api.exceptions.BadRequestException;
-import ru.lilaksy.learning.test.task.tracker.api.exceptions.NotFoundException;
 import ru.lilaksy.learning.test.task.tracker.api.factories.ProjectDtoFactory;
 import ru.lilaksy.learning.test.task.tracker.store.entities.ProjectEntity;
 import ru.lilaksy.learning.test.task.tracker.store.repositories.ProjectRepository;

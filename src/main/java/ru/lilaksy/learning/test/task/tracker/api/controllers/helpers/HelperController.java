@@ -4,7 +4,6 @@ import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import ru.lilaksy.learning.test.task.tracker.api.exceptions.NotFoundException;
-import ru.lilaksy.learning.test.task.tracker.api.factories.ProjectDtoFactory;
 import ru.lilaksy.learning.test.task.tracker.store.entities.ProjectEntity;
 import ru.lilaksy.learning.test.task.tracker.store.entities.TaskStateEntity;
 import ru.lilaksy.learning.test.task.tracker.store.repositories.ProjectRepository;

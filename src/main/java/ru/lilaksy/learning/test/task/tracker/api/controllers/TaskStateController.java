@@ -124,15 +124,16 @@ public class TaskStateController {
         if (project.getTaskStates().size() <= 1) {
             throw new BadRequestException("Can not change position in project with less than 2 task states.");
 
-            //or if we don't want to show exception for client, we can use:
+            //or if we don't want to send exception for client, we can use:
             //return taskStateDtoFactory.makeTaskStateDto(wannaBeChangedTaskState);
         }
 
-        Optional<TaskStateEntity> currentRightTaskState = wannaBeChangedTaskState.getRightTaskState();
+        Optional<Long> optionalCurrentLeftTaskStateId = wannaBeChangedTaskState.getLeftTaskState().map(TaskStateEntity::getId);
+        if (optionalCurrentLeftTaskStateId.equals(optionalLeftTaskStateId)){
+            return taskStateDtoFactory.makeTaskStateDto(wannaBeChangedTaskState);
+        }
 
-        Optional<TaskStateEntity> currentLeftTaskState = wannaBeChangedTaskState.getLeftTaskState();
-
-        Optional<TaskStateEntity> leftTaskState = optionalLeftTaskStateId
+        Optional<TaskStateEntity> optionalLeftTaskState = optionalLeftTaskStateId
                 .map(leftTaskStateId -> {
                     if (taskStateId.equals(leftTaskStateId)){
                         throw new BadRequestException("Left task state ID is equals to changing task state.");
@@ -147,46 +148,57 @@ public class TaskStateController {
                     return leftTaskStateEntity;
                 });
 
-        Optional<TaskStateEntity> rightFromLeftTaskState;
+        Optional<TaskStateEntity> optionalRightFromLeftTaskState;
 
-        if (leftTaskState.isEmpty()){
-            rightFromLeftTaskState = project.getTaskStates()
+        if (optionalLeftTaskState.isEmpty()){
+            optionalRightFromLeftTaskState = project.getTaskStates()
                     .stream()
                     .filter(e -> e.getLeftTaskState().isEmpty())
                     .findAny();
         }
         else{
-            rightFromLeftTaskState = leftTaskState.get().getRightTaskState();
+            optionalRightFromLeftTaskState = optionalLeftTaskState.get().getRightTaskState();
         }
 
-        currentLeftTaskState.ifPresent(it -> {
-            it.setRightTaskState(currentRightTaskState.orElse(null));
-            taskStateRepository.saveAndFlush(it);
-        });
-        currentRightTaskState.ifPresent(it -> {
-            it.setLeftTaskState(currentLeftTaskState.orElse(null));
-            taskStateRepository.saveAndFlush(it);
-        });
+        Optional<TaskStateEntity> optionalCurrentRightTaskState = wannaBeChangedTaskState.getRightTaskState();
+        Optional<TaskStateEntity> optionalCurrentLeftTaskState = wannaBeChangedTaskState.getLeftTaskState();
 
-        if(rightFromLeftTaskState.isPresent()){
-            rightFromLeftTaskState.get().setLeftTaskState(wannaBeChangedTaskState);
-            wannaBeChangedTaskState.setRightTaskState(rightFromLeftTaskState.get());
-        }
-        else{
+        if (optionalCurrentLeftTaskState.isPresent()) {
+            TaskStateEntity currentLeftTaskState = optionalCurrentLeftTaskState.get();
             wannaBeChangedTaskState.setRightTaskState(null);
+            currentLeftTaskState.setRightTaskState(optionalCurrentRightTaskState.orElse(null));
+            wannaBeChangedTaskState = taskStateRepository.saveAndFlush(wannaBeChangedTaskState);
+            currentLeftTaskState = taskStateRepository.saveAndFlush(currentLeftTaskState);
         }
 
-        if(leftTaskState.isPresent()){
-            leftTaskState.get().setRightTaskState(wannaBeChangedTaskState);
-            wannaBeChangedTaskState.setLeftTaskState(leftTaskState.get());
-        }
-        else{
+        if (optionalCurrentRightTaskState.isPresent()) {
+            TaskStateEntity currentRightTaskState = optionalCurrentRightTaskState.get();
             wannaBeChangedTaskState.setLeftTaskState(null);
+            currentRightTaskState.setLeftTaskState(optionalCurrentLeftTaskState.orElse(null));
+            wannaBeChangedTaskState = taskStateRepository.saveAndFlush(wannaBeChangedTaskState);
+            currentRightTaskState = taskStateRepository.saveAndFlush(currentRightTaskState);
         }
 
+        TaskStateEntity settingRight = null;
+        TaskStateEntity settingLeft = null;
+
+        if(optionalRightFromLeftTaskState.isPresent()){
+            TaskStateEntity newRightTaskState = optionalRightFromLeftTaskState.get();
+            newRightTaskState.setLeftTaskState(wannaBeChangedTaskState);
+            settingRight = newRightTaskState;
+            newRightTaskState = taskStateRepository.saveAndFlush(newRightTaskState);
+        }
+
+        if(optionalLeftTaskState.isPresent()){
+            TaskStateEntity newLeftTaskState = optionalLeftTaskState.get();
+            newLeftTaskState.setRightTaskState(wannaBeChangedTaskState);
+            settingLeft = newLeftTaskState;
+            newLeftTaskState = taskStateRepository.saveAndFlush(newLeftTaskState);
+        }
+
+        wannaBeChangedTaskState.setRightTaskState(settingRight);
+        wannaBeChangedTaskState.setLeftTaskState(settingLeft);
         wannaBeChangedTaskState = taskStateRepository.saveAndFlush(wannaBeChangedTaskState);
-        leftTaskState.ifPresent(taskStateRepository::saveAndFlush);
-        rightFromLeftTaskState.ifPresent(taskStateRepository::saveAndFlush);
 
         return taskStateDtoFactory.makeTaskStateDto(wannaBeChangedTaskState);
     }
