@@ -119,4 +119,102 @@ public class TaskController {
 
         return taskDtoFactory.makeTaskDto(task);
     }
+
+    @PatchMapping(MOVE_TASK)
+    public TaskDto moveTask(@PathVariable(name = "task_id") Long taskId,
+                            @RequestParam(name = "new_left_task_id", required = false) Optional<Long> optionalLeftTaskId){
+        TaskEntity wannaBeChangedTask = helperController.getTaskByIdOrThrowException(taskId);
+
+        TaskStateEntity taskState = wannaBeChangedTask.getTaskState();
+
+        if (taskState.getTasks().size() <= 1) {
+            throw new BadRequestException("Can not change position in task state with less than 2 tasks.");
+
+            //or if we don't want to send exception for client, we can use:
+            //return taskDtoFactory.makeTaskDto(wannaBeChangedTask);
+        }
+
+        Optional<Long> optionalCurrentLeftTaskId = wannaBeChangedTask.getLeftTask().map(TaskEntity::getId);
+        if (optionalCurrentLeftTaskId.equals(optionalLeftTaskId)){
+            return taskDtoFactory.makeTaskDto(wannaBeChangedTask);
+        }
+
+        Optional<TaskEntity> optionalLeftTask = optionalLeftTaskId
+                .map(leftTaskId -> {
+                    if (taskId.equals(leftTaskId)){
+                        throw new BadRequestException("Left task ID is equals to changing task.");
+                    }
+
+                    TaskEntity leftTaskEntity = helperController.getTaskByIdOrThrowException(leftTaskId);
+
+                    if (!taskState.getId().equals(leftTaskEntity.getTaskState().getId())){
+                        throw new BadRequestException("Task position can not be changed within the same task state!");
+                    }
+
+                    return leftTaskEntity;
+                });
+
+        Optional<TaskEntity> optionalRightFromLeftTask;
+
+        if (optionalLeftTask.isEmpty()){
+            optionalRightFromLeftTask = taskState.getTasks()
+                    .stream()
+                    .filter(e -> e.getLeftTask().isEmpty())
+                    .findAny();
+        }
+        else{
+            optionalRightFromLeftTask = optionalLeftTask.get().getRightTask();
+        }
+
+        Optional<TaskEntity> optionalCurrentRightTask = wannaBeChangedTask.getRightTask();
+        Optional<TaskEntity> optionalCurrentLeftTask = wannaBeChangedTask.getLeftTask();
+
+        if (optionalCurrentLeftTask.isPresent()) {
+            TaskEntity currentLeftTask = optionalCurrentLeftTask.get();
+            wannaBeChangedTask.setRightTask(null);
+            currentLeftTask.setRightTask(optionalCurrentRightTask.orElse(null));
+            wannaBeChangedTask = taskRepository.saveAndFlush(wannaBeChangedTask);
+            currentLeftTask = taskRepository.saveAndFlush(currentLeftTask);
+        }
+
+        if (optionalCurrentRightTask.isPresent()) {
+            TaskEntity currentRightTask = optionalCurrentRightTask.get();
+            wannaBeChangedTask.setLeftTask(null);
+            currentRightTask.setLeftTask(optionalCurrentLeftTask.orElse(null));
+            wannaBeChangedTask = taskRepository.saveAndFlush(wannaBeChangedTask);
+            currentRightTask = taskRepository.saveAndFlush(currentRightTask);
+        }
+
+        TaskEntity settingRight = null;
+        TaskEntity settingLeft = null;
+
+        if(optionalRightFromLeftTask.isPresent()){
+            TaskEntity newRightTask = optionalRightFromLeftTask.get();
+            newRightTask.setLeftTask(wannaBeChangedTask);
+            settingRight = newRightTask;
+            newRightTask = taskRepository.saveAndFlush(newRightTask);
+        }
+
+        if(optionalLeftTask.isPresent()){
+            TaskEntity newLeftTask = optionalLeftTask.get();
+            newLeftTask.setRightTask(wannaBeChangedTask);
+            settingLeft = newLeftTask;
+            newLeftTask = taskRepository.saveAndFlush(newLeftTask);
+        }
+
+        wannaBeChangedTask.setRightTask(settingRight);
+        wannaBeChangedTask.setLeftTask(settingLeft);
+        wannaBeChangedTask = taskRepository.saveAndFlush(wannaBeChangedTask);
+
+        return taskDtoFactory.makeTaskDto(wannaBeChangedTask);
+    }
+
+    @DeleteMapping(DELETE_TASK)
+    public Boolean deleteTask(@PathVariable(name = "task_id") Long taskId){
+        helperController.getTaskByIdOrThrowException(taskId);
+
+        taskRepository.deleteById(taskId);
+
+        return true;
+    }
 }
