@@ -206,7 +206,37 @@ public class TaskStateController {
     @DeleteMapping(DELETE_TASK_STATE)
     public Boolean deleteTaskState(@PathVariable(name = "task_state_id") Long taskStateId){
 
-        helperController.getTaskStateByIdOrThrowException(taskStateId);
+        TaskStateEntity taskState = helperController.getTaskStateByIdOrThrowException(taskStateId);
+
+        Optional<TaskStateEntity> optionalLeftTaskState = taskState.getLeftTaskState();
+        Optional<TaskStateEntity> optionalRightTaskState = taskState.getRightTaskState();
+
+        if(optionalLeftTaskState.isPresent() && optionalRightTaskState.isPresent()){
+            taskState.setLeftTaskState(null);
+            taskState.setRightTaskState(null);
+
+            taskState = taskStateRepository.saveAndFlush(taskState);
+
+            TaskStateEntity leftTaskState = optionalLeftTaskState.get();
+            TaskStateEntity rightTaskState = optionalRightTaskState.get();
+
+            leftTaskState.setRightTaskState(rightTaskState);
+            rightTaskState.setLeftTaskState(leftTaskState);
+
+            leftTaskState = taskStateRepository.saveAndFlush(leftTaskState);
+            rightTaskState = taskStateRepository.saveAndFlush(rightTaskState);
+        }
+        else {
+            optionalLeftTaskState.ifPresent(e -> {
+                e.setRightTaskState(null);
+                e = taskStateRepository.saveAndFlush(e);
+            });
+
+            optionalRightTaskState.ifPresent(e -> {
+                e.setLeftTaskState(null);
+                e = taskStateRepository.saveAndFlush(e);
+            });
+        }
 
         taskStateRepository.deleteById(taskStateId);
 

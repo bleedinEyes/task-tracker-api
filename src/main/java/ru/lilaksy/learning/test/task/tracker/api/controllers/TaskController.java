@@ -211,7 +211,37 @@ public class TaskController {
 
     @DeleteMapping(DELETE_TASK)
     public Boolean deleteTask(@PathVariable(name = "task_id") Long taskId){
-        helperController.getTaskByIdOrThrowException(taskId);
+        TaskEntity task = helperController.getTaskByIdOrThrowException(taskId);
+
+        Optional<TaskEntity> optionalLeftTask = task.getLeftTask();
+        Optional<TaskEntity> optionalRightTask = task.getRightTask();
+
+        if(optionalLeftTask.isPresent() && optionalRightTask.isPresent()){
+            task.setLeftTask(null);
+            task.setRightTask(null);
+
+            task = taskRepository.saveAndFlush(task);
+
+            TaskEntity leftTask = optionalLeftTask.get();
+            TaskEntity rightTask = optionalRightTask.get();
+
+            leftTask.setRightTask(rightTask);
+            rightTask.setLeftTask(leftTask);
+
+            leftTask = taskRepository.saveAndFlush(leftTask);
+            rightTask = taskRepository.saveAndFlush(rightTask);
+        }
+        else {
+            optionalLeftTask.ifPresent(e -> {
+                e.setRightTask(null);
+                e = taskRepository.saveAndFlush(e);
+            });
+
+            optionalRightTask.ifPresent(e -> {
+                e.setLeftTask(null);
+                e = taskRepository.saveAndFlush(e);
+            });
+        }
 
         taskRepository.deleteById(taskId);
 
